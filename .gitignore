@@ -1,0 +1,15 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+data/gridsense_memory.db
+*.gguf
+*.bin
+*.safetensors
+*.zip
+gridsense_gemma4_lora_e2b/
+data/synthetic_outage_reports.jsonl
+tests/synthetic_outage_reports.jsonl
+test_*.py
+tests/upload.py

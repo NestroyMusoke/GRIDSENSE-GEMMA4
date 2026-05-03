@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>GridSense | Neighborhood Outage Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root {
+  --bg:#060B12; --bg-card:#0D1520; --bg-input:#0A1018;
+  --border:#1A2535; --border-light:#243040;
+  --cyan:#00D1FF; --cyan-dim:rgba(0,209,255,0.15); --cyan-glow:rgba(0,209,255,0.06);
+  --amber:#FFA500; --amber-dim:rgba(255,165,0,0.15);
+  --danger:#FF3B3B; --danger-dim:rgba(255,59,59,0.15);
+  --success:#00C853; --success-dim:rgba(0,200,83,0.12);
+  --text:#E8EDF2; --text-muted:#4A5E72; --text-secondary:#7B8FA3;
+  --card-radius:16px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;min-height:100vh;overflow-x:hidden}
+#aurora-canvas{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;mix-blend-mode:screen}
+.grid-bg{position:fixed;top:0;left:0;width:100%;height:100%;opacity:.04;z-index:0;pointer-events:none;background-image:linear-gradient(var(--cyan) 1px,transparent 1px),linear-gradient(90deg,var(--cyan) 1px,transparent 1px);background-size:60px 60px;animation:grid-drift 90s linear infinite}
+@keyframes grid-drift{from{background-position:0 0}to{background-position:60px 60px}}
+.scanline{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,209,255,.008) 2px,rgba(0,209,255,.008) 4px)}
+.container{position:relative;z-index:1;max-width:1120px;margin:0 auto;padding:0 16px 80px}
+
+/* ── HEADER ── */
+header{padding:36px 0 28px;text-align:center}
+.logo-row{display:inline-flex;align-items:center;gap:18px;margin-bottom:14px}
+.logo-svg{width:56px;height:56px;filter:drop-shadow(0 0 24px rgba(0,209,255,.3));animation:logo-pulse 4s ease-in-out infinite}
+@keyframes logo-pulse{0%,100%{filter:drop-shadow(0 0 20px rgba(0,209,255,.2))}50%{filter:drop-shadow(0 0 40px rgba(0,209,255,.5))}}
+.logo-text{font-size:44px;font-weight:900;letter-spacing:-2.5px;background:linear-gradient(135deg,#00D1FF,#60EEFF);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1}
+.logo-tag{font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:4px;color:var(--text-muted);display:block;margin-top:2px}
+.tagline{color:var(--text-secondary);font-size:15px;max-width:520px;margin:0 auto;line-height:1.7}
+.tagline strong{color:var(--cyan)}
+
+/* ── STATUS BAR ── */
+.status-bar{display:flex;align-items:center;justify-content:center;gap:20px;flex-wrap:wrap;margin:16px 0;padding:12px 20px;background:var(--bg-card);border:1px solid var(--border);border-radius:12px}
+.status-item{display:flex;align-items:center;gap:8px;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-secondary);letter-spacing:.5px}
+.dot{width:8px;height:8px;border-radius:50%}
+.dot-green{background:var(--success);box-shadow:0 0 8px rgba(0,200,83,.6);animation:blink 2s ease-in-out infinite}
+.dot-cyan{background:var(--cyan);box-shadow:0 0 8px rgba(0,209,255,.5);animation:blink 2.5s ease-in-out infinite}
+.dot-amber{background:var(--amber);box-shadow:0 0 8px rgba(255,165,0,.5);animation:blink 3s ease-in-out infinite}
+.dot-red{background:var(--danger);box-shadow:0 0 8px rgba(255,59,59,.6);animation:blink .8s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+.brain-badge{font-family:'Share Tech Mono',monospace;font-size:10px;padding:4px 10px;border-radius:100px;background:rgba(0,209,255,.08);border:1px solid rgba(0,209,255,.2);color:var(--cyan)}
+
+/* ── CARDS ── */
+.card{background:linear-gradient(160deg,#0F1B28 0%,#0A1018 100%);border:1px solid var(--border);border-radius:var(--card-radius);padding:28px;margin-bottom:20px;position:relative;overflow:hidden;transition:border-color .3s,box-shadow .3s}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(0,209,255,.15),transparent)}
+.card:hover{border-color:rgba(0,209,255,.18);box-shadow:0 0 50px rgba(0,209,255,.04)}
+.section-num{font-size:72px;font-weight:900;color:rgba(255,255,255,.03);font-family:'Outfit',sans-serif;position:absolute;top:8px;right:18px;line-height:1;pointer-events:none}
+.card-label{font-family:'Share Tech Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:2.5px;color:var(--cyan);margin-bottom:22px;display:flex;align-items:center;gap:10px}
+.card-label::before{content:'';width:3px;height:16px;background:var(--cyan);border-radius:2px;flex-shrink:0}
+
+/* ── RING ── */
+.ring-section{text-align:center;padding:32px 0 16px}
+.ring-wrapper{display:inline-block;position:relative;width:280px;height:280px}
+.ring-svg{width:280px;height:280px;transform:rotate(-90deg)}
+.ring-track{fill:none;stroke:rgba(0,209,255,.06);stroke-width:10}
+.ring-outer{fill:none;stroke:rgba(0,209,255,.12);stroke-width:1.5}
+.ring-fill{fill:none;stroke:var(--cyan);stroke-width:10;stroke-linecap:round;stroke-dasharray:816.81;stroke-dashoffset:816.81;transition:stroke-dashoffset 1.4s cubic-bezier(.4,0,.2,1),stroke .8s ease;filter:drop-shadow(0 0 14px rgba(0,209,255,.4))}
+.ring-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;width:200px}
+.ring-number{font-family:'Share Tech Mono',monospace;font-size:86px;font-weight:300;letter-spacing:-4px;color:var(--cyan);line-height:1;transition:color .8s}
+.ring-pct{font-family:'Share Tech Mono',monospace;font-size:14px;color:var(--text-muted)}
+.ring-label{font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:2.5px;color:var(--text-muted);margin-top:2px}
+.ring-confidence{font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:1.5px;margin-top:10px;transition:color .8s}
+
+/* ── WARNING BANNER ── */
+.warning-banner{display:none;margin:20px auto;max-width:480px;padding:14px 24px;border-radius:100px;text-align:center;font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase}
+.warning-banner.critical{background:rgba(255,59,59,.1);border:1px solid rgba(255,59,59,.4);color:#FF3B3B;animation:banner-pulse 2s ease-in-out infinite}
+.warning-banner.warning{background:rgba(255,133,51,.1);border:1px solid rgba(255,133,51,.4);color:#FF8533;animation:banner-pulse 3s ease-in-out infinite}
+@keyframes banner-pulse{0%,100%{box-shadow:0 0 20px rgba(255,59,59,.15)}50%{box-shadow:0 0 40px rgba(255,59,59,.35)}}
+.status-pill{display:inline-block;font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:2px;padding:5px 14px;border-radius:100px;margin-top:10px;transition:all .8s}
+.explanation-text{color:var(--text-secondary);font-size:15px;margin-top:18px;max-width:560px;margin-left:auto;margin-right:auto;line-height:1.75;min-height:28px;transition:all .4s}
+
+/* ── MEMORY / ACCURACY ── */
+.memory-note{display:none;font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--cyan);text-align:center;margin-top:14px;padding:8px;border:1px solid rgba(0,209,255,.12);border-radius:8px;background:rgba(0,209,255,.03)}
+.accuracy-row{display:none;gap:16px;margin-top:16px;flex-wrap:wrap}
+.accuracy-stat{flex:1;min-width:120px;padding:16px;background:var(--bg-input);border-radius:12px;border:1px solid var(--border);text-align:center}
+.accuracy-big{font-family:'Share Tech Mono',monospace;font-size:36px;color:var(--success)}
+.accuracy-tiny{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-muted);letter-spacing:1.5px;margin-top:4px}
+
+/* ── OUTCOME BUTTONS ── */
+.outcome-row{display:none;gap:12px;margin-top:18px}
+.outcome-btn{flex:1;padding:12px;border-radius:10px;border:1px solid;font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:1.5px;cursor:pointer;transition:all .2s}
+.outcome-btn.yes{background:var(--success-dim);border-color:var(--success);color:var(--success)}
+.outcome-btn.yes:hover{background:rgba(0,200,83,.2);box-shadow:0 0 20px rgba(0,200,83,.2)}
+.outcome-btn.no{background:var(--danger-dim);border-color:var(--danger);color:var(--danger)}
+.outcome-btn.no:hover{background:rgba(255,59,59,.2);box-shadow:0 0 20px rgba(255,59,59,.2)}
+.utility-note{display:none;margin-top:14px;padding:12px 16px;background:rgba(0,209,255,.04);border:1px solid rgba(0,209,255,.12);border-radius:10px;font-size:13px;color:var(--text-secondary);line-height:1.6}
+
+/* ── INPUT ── */
+.media-buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.media-btn{padding:16px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:12px;color:var(--text-secondary);font-family:'Outfit',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px}
+.media-btn:hover{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 20px rgba(0,209,255,.08);transform:translateY(-1px)}
+.media-btn:active{transform:scale(.97)}
+.media-btn .btn-icon{font-size:20px}
+.text-input-row{display:flex;gap:10px;align-items:flex-end}
+.text-input{flex:1;background:var(--bg-input);border:1px solid var(--border);border-radius:12px;color:var(--text);font-family:'Outfit',sans-serif;font-size:14px;padding:16px 18px;outline:none;resize:none;min-height:64px;transition:border-color .3s,box-shadow .3s;line-height:1.6}
+.text-input:focus{border-color:var(--cyan);box-shadow:0 0 24px rgba(0,209,255,.08)}
+.text-input::placeholder{color:var(--text-muted)}
+.mic-btn{width:52px;height:52px;border-radius:50%;background:var(--bg-input);border:1px solid var(--border);color:var(--text-secondary);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0}
+.mic-btn:hover{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 16px rgba(0,209,255,.12)}
+.mic-btn.recording{background:rgba(255,59,59,.1);border-color:var(--danger);color:var(--danger);animation:mic-pulse .8s ease-in-out infinite}
+@keyframes mic-pulse{0%,100%{box-shadow:0 0 10px rgba(255,59,59,.3)}50%{box-shadow:0 0 30px rgba(255,59,59,.6)}}
+.submit-btn{width:100%;padding:18px;background:linear-gradient(135deg,#00D1FF,#0090B0);color:#000;border:none;border-radius:14px;font-family:'Outfit',sans-serif;font-size:15px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;margin-top:14px;transition:all .3s;position:relative;overflow:hidden}
+.submit-btn::before{content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.15),transparent);transition:left .5s}
+.submit-btn:hover::before{left:100%}
+.submit-btn:hover{transform:translateY(-2px);box-shadow:0 12px 40px rgba(0,209,255,.35)}
+.submit-btn:active{transform:scale(.98)}
+.submit-btn.loading{background:var(--bg-card);color:var(--cyan);border:1px solid var(--cyan)}
+.media-preview{display:none;margin-bottom:14px;position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--border)}
+.media-preview img,.media-preview video{width:100%;max-height:220px;object-fit:cover;display:block}
+.media-info-bar{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-muted);padding:8px 12px;background:rgba(0,0,0,.4);display:flex;justify-content:space-between;align-items:center}
+.clear-media-btn{background:rgba(255,59,59,.15);color:var(--danger);border:1px solid rgba(255,59,59,.3);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:11px;font-family:'Share Tech Mono',monospace}
+.processing-steps{display:none;margin-top:12px;padding:14px;background:rgba(0,209,255,.03);border-radius:10px;border:1px solid rgba(0,209,255,.1)}
+.step{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-muted);padding:4px 0;display:flex;align-items:center;gap:8px;transition:color .3s}
+.step.done{color:var(--success)}
+.step.active{color:var(--cyan)}
+.guidance-msg{display:none;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--amber);padding:12px 16px;border:1px solid var(--amber-dim);border-radius:10px;margin-top:12px;animation:fade-in .3s ease;line-height:1.6}
+.lang-detected{display:none;font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--cyan);margin-top:8px;padding:6px 10px;border-radius:6px;background:rgba(0,209,255,.05);border:1px solid rgba(0,209,255,.12)}
+@keyframes fade-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── REASONING TRACE ── */
+.trace-item{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid rgba(26,37,53,.8);font-size:13px;color:var(--text-secondary);line-height:1.65;animation:trace-in .4s ease forwards;opacity:0}
+@keyframes trace-in{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
+.trace-item:last-child{border-bottom:none}
+.trace-num{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--cyan);flex-shrink:0;margin-top:2px;width:24px}
+
+/* ── ACTIONS ── */
+.action-item{display:flex;gap:14px;padding:16px;background:var(--bg-input);border-radius:12px;border-left:3px solid var(--cyan);margin-bottom:10px;cursor:pointer;transition:all .2s;animation:action-in .4s ease forwards;opacity:0}
+@keyframes action-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.action-item:hover{background:rgba(0,209,255,.04);border-left-color:#40E0FF;transform:translateX(2px)}
+.action-item.done{opacity:.55;border-left-color:var(--success)}
+.action-item.done .action-check{background:var(--success);border-color:var(--success);color:#fff}
+.action-check{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--cyan);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;transition:all .2s}
+.action-text{font-size:14px;color:var(--text-secondary);line-height:1.65;flex:1}
+.action-progress{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-muted);text-align:center;margin-top:16px;padding:10px;border-radius:8px;background:rgba(0,0,0,.2);transition:color .3s}
+
+/* ── REGIONAL GRID ── */
+.region-grid{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.region-cell{min-width:110px;padding:16px 12px;border-radius:12px;text-align:center;border:1px solid transparent;transition:all .3s;animation:cell-in .5s ease forwards;opacity:0}
+@keyframes cell-in{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+.region-cell:hover{transform:scale(1.06);z-index:5}
+.region-cell.user-area{border-width:2px}
+.region-name{font-family:'Share Tech Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;line-height:1.4}
+.region-prob{font-family:'Share Tech Mono',monospace;font-size:26px;font-weight:600;line-height:1}
+.region-you{font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:1px;margin-top:4px}
+
+/* ── MAP ── */
+#live-map{height:340px;border-radius:12px;border:1px solid var(--border);overflow:hidden}
+.map-legend{display:flex;gap:16px;justify-content:center;margin-top:12px;flex-wrap:wrap}
+.map-legend-item{display:flex;align-items:center;gap:6px;font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-muted)}
+.legend-dot{width:10px;height:10px;border-radius:50%}
+
+/* ── HEATMAP ── */
+.heatmap-grid{display:grid;grid-template-columns:42px repeat(24,1fr);gap:3px}
+.hm-label{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-muted);display:flex;align-items:center}
+.hm-cell{aspect-ratio:1;border-radius:3px;min-height:16px;cursor:crosshair;position:relative;transition:transform .15s}
+.hm-cell:hover{transform:scale(1.5);z-index:10}
+.hm-hour-row{display:grid;grid-template-columns:42px repeat(24,1fr);gap:3px;margin-top:4px}
+.hm-hour-label{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--text-muted);text-align:center}
+.heatmap-legend{display:flex;align-items:center;gap:8px;margin-top:16px;justify-content:center}
+.legend-bar{width:180px;height:10px;border-radius:100px;background:linear-gradient(to right,#0a1520,#0d2a1a,#1a3a0a,#3a3a0a,#5a2a0a,#6a0a0a,#8a0505)}
+.legend-text{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-muted)}
+
+/* ── STORY ── */
+.story-panel{min-height:90vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:60px 20px;border-top:1px solid var(--border)}
+.story-heading{font-size:54px;font-weight:900;letter-spacing:-2px;line-height:1.1;margin-bottom:20px}
+.story-sub{font-size:17px;color:var(--text-secondary);max-width:580px;margin:0 auto;line-height:1.75}
+.roadmap-phases{display:flex;flex-direction:column;gap:12px;margin-top:28px;text-align:left;max-width:520px;margin-left:auto;margin-right:auto}
+.phase{font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:.5px;padding:14px 18px;border-left:2px solid var(--cyan);color:var(--text-secondary);line-height:1.6;background:rgba(0,209,255,.02);border-radius:0 8px 8px 0}
+.phase strong{color:var(--cyan);display:block;margin-bottom:4px}
+.stats-row{display:flex;gap:20px;justify-content:center;flex-wrap:wrap;margin-top:28px}
+.stat-box{text-align:center;padding:20px 28px;background:var(--bg-card);border:1px solid var(--border);border-radius:14px;min-width:140px}
+.stat-num{font-family:'Share Tech Mono',monospace;font-size:40px;color:var(--cyan);font-weight:300}
+.stat-label{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-muted);letter-spacing:1.5px;margin-top:6px}
+
+footer{text-align:center;padding:40px 0;border-top:1px solid var(--border);font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--text-muted);line-height:2}
+
+/* ── RESPONSIVE ── */
+@media(max-width:600px){
+  .logo-text{font-size:34px}
+  .ring-wrapper{width:240px;height:240px}
+  .ring-svg{width:240px;height:240px}
+  .ring-number{font-size:72px}
+  .story-heading{font-size:36px}
+  .media-buttons{grid-template-columns:1fr}
+  .status-bar{gap:12px}
+  .section-num{font-size:52px}
+  .card{padding:20px}
+}
+
+/* ── WEATHER WIDGET ── */
+.weather-widget{display:none;padding:14px 18px;background:rgba(0,209,255,.04);border:1px solid rgba(0,209,255,.12);border-radius:12px;margin-bottom:16px}
+.weather-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.weather-icon{font-size:28px}
+.weather-temp{font-family:'Share Tech Mono',monospace;font-size:24px;color:var(--text)}
+.weather-details{flex:1}
+.weather-condition{font-size:14px;color:var(--text-secondary);font-weight:500}
+.weather-meta{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-muted);margin-top:3px}
+.weather-risk-bar{height:6px;background:var(--border);border-radius:100px;overflow:hidden;margin-top:10px}
+.weather-risk-fill{height:100%;border-radius:100px;transition:width 1s ease}
+
+/* Leaflet dark override */
+.leaflet-container{background:#060B12}
+.leaflet-tile{filter:brightness(.7) saturate(.8) hue-rotate(180deg)}
+.leaflet-popup-content-wrapper{background:var(--bg-card);border:1px solid var(--border);color:var(--text);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.leaflet-popup-tip{background:var(--bg-card)}
+</style>
+</head>
+<body>
+
+<canvas id="aurora-canvas"></canvas>
+<div class="grid-bg"></div>
+<div class="scanline"></div>
+
+<div class="container">
+
+<!-- HEADER -->
+<header>
+  <div class="logo-row">
+    <svg class="logo-svg" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#00D1FF"/>
+          <stop offset="100%" style="stop-color:#40E0FF"/>
+        </linearGradient>
+        <filter id="glow"><feGaussianBlur stdDeviation="2.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      <circle cx="28" cy="28" r="25" fill="none" stroke="url(#g1)" stroke-width="1.5" opacity=".25"/>
+      <circle cx="28" cy="28" r="25" fill="none" stroke="url(#g1)" stroke-width="2.5" stroke-dasharray="110 160" stroke-dashoffset="-25" stroke-linecap="round"/>
+      <g filter="url(#glow)">
+        <path d="M31 13L22 28.5L27.5 28.5L24.5 43L36 26.5L30 26.5Z" fill="url(#g1)"/>
+      </g>
+    </svg>
+    <div>
+      <div class="logo-text">GridSense</div>
+      <span class="logo-tag">GEMMA EDGE // NEIGHBORHOOD INTELLIGENCE</span>
+    </div>
+  </div>
+  <p class="tagline">Your neighborhood's first <strong>multimodal AI warning system</strong> for power outages. Report what you see. Gemma 4 tells you what is coming.</p>
+</header>
+
+<!-- STATUS BAR -->
+<div class="status-bar">
+  <div class="status-item">
+    <div class="dot dot-green"></div>
+    <span id="brainStatus">BRAIN ONLINE</span>
+  </div>
+  <div class="status-item">
+    <div class="dot dot-cyan"></div>
+    MULTIMODAL ACTIVE
+  </div>
+  <div class="status-item">
+    <div class="dot dot-amber" id="memoryDot"></div>
+    <span id="memoryStatus">MEMORY: INITIALIZING</span>
+  </div>
+  <div class="status-item">
+    <div class="dot" id="weatherDot" style="background:#4A5E72"></div>
+    <span id="weatherStatus">WEATHER: PENDING</span>
+  </div>
+  <span class="brain-badge" id="brainBadge">GEMMA 4</span>
+  <select id="langSelect" style="background:var(--bg-input);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Outfit',sans-serif;font-size:12px;padding:6px 10px;outline:none;cursor:pointer">
+    <option value="en">🌐 English</option>
+    <option value="sw">🇹🇿 Swahili</option>
+    <option value="ar">🇸🇦 Arabic</option>
+    <option value="fr">🇫🇷 French</option>
+    <option value="es">🇪🇸 Spanish</option>
+    <option value="ur">🇵🇰 Urdu</option>
+    <option value="hi">🇮🇳 Hindi</option>
+    <option value="tl">🇵🇭 Filipino</option>
+    <option value="yo">🇳🇬 Yoruba</option>
+    <option value="pt">🇧🇷 Portuguese</option>
+  </select>
+</div>
+
+<!-- 01 PROBABILITY SCAN -->
+<div class="card" id="probabilityCard">
+  <div class="section-num">01</div>
+  <div class="card-label">CORE PROBABILITY SCAN</div>
+
+  <!-- Live weather widget -->
+  <div class="weather-widget" id="weatherWidget">
+    <div class="weather-row">
+      <div class="weather-icon" id="weatherIcon">🌤</div>
+      <div class="weather-temp" id="weatherTemp">—°C</div>
+      <div class="weather-details">
+        <div class="weather-condition" id="weatherCondition">Loading weather...</div>
+        <div class="weather-meta" id="weatherMeta">Wind — km/h · Rain — mm</div>
+      </div>
+      <div style="font-family:'Share Tech Mono',monospace;font-size:11px;text-align:right">
+        <div style="color:var(--text-muted);font-size:9px;letter-spacing:1px;margin-bottom:3px">GRID RISK</div>
+        <div id="weatherRiskLabel" style="color:var(--cyan)">—</div>
+      </div>
+    </div>
+    <div class="weather-risk-bar">
+      <div class="weather-risk-fill" id="weatherRiskFill" style="width:0%;background:var(--success)"></div>
+    </div>
+  </div>
+
+  <div class="ring-section">
+    <div class="ring-wrapper">
+      <svg class="ring-svg" viewBox="0 0 280 280">
+        <circle class="ring-outer" cx="140" cy="140" r="130"/>
+        <circle class="ring-track" cx="140" cy="140" r="130"/>
+        <circle class="ring-fill" id="ringFill" cx="140" cy="140" r="130"/>
+      </svg>
+      <div class="ring-center">
+        <div class="ring-number" id="ringNumber">0</div>
+        <div class="ring-label">OUTAGE PROBABILITY</div>
+        <div class="ring-confidence" id="ringConfidence" style="color:var(--text-muted)">AWAITING SIGNALS</div>
+      </div>
+    </div>
+
+    <div id="warningBanner" class="warning-banner">
+      ⚠ <span id="warningText">ELEVATED RISK DETECTED</span>
+    </div>
+
+    <div style="text-align:center;margin-top:12px">
+      <span class="status-pill" id="statusPill" style="color:var(--text-muted);background:rgba(74,94,114,.1);border:1px solid rgba(74,94,114,.2)">STATUS: STANDBY</span>
+    </div>
+
+    <p class="explanation-text" id="explanationText">Waiting for signals. Describe what you notice — a hum, a flicker, a crew van, anything.</p>
+  </div>
+
+  <div class="memory-note" id="memoryNote"></div>
+
+  <div class="accuracy-row" id="accuracyRow">
+    <div class="accuracy-stat">
+      <div class="accuracy-big" id="accPercent">—</div>
+      <div class="accuracy-tiny">FORECAST ACCURACY</div>
+    </div>
+    <div class="accuracy-stat">
+      <div class="accuracy-big" id="accTotal" style="color:var(--cyan)">—</div>
+      <div class="accuracy-tiny">PREDICTIONS MADE</div>
+    </div>
+    <div class="accuracy-stat">
+      <div class="accuracy-big" id="accConfirmed" style="color:var(--amber)">—</div>
+      <div class="accuracy-tiny">OUTAGES CONFIRMED</div>
+    </div>
+  </div>
+
+  <div class="outcome-row" id="outcomeRow">
+    <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-muted);width:100%;text-align:center;letter-spacing:1.5px;margin-bottom:4px">DID THE POWER GO OUT? — HELP GRIDSENSE LEARN</div>
+    <button class="outcome-btn yes" onclick="confirmOutcome('outage_occurred')">✓ YES IT DID</button>
+    <button class="outcome-btn no" onclick="confirmOutcome('no_outage')">✗ POWER STAYED ON</button>
+  </div>
+
+  <div class="utility-note" id="utilityNote"></div>
+</div>
+
+<!-- 02 INPUT -->
+<div class="card">
+  <div class="section-num">02</div>
+  <div class="card-label">COMMUNITY SIGNAL INPUT</div>
+
+  <div class="media-buttons">
+    <button class="media-btn" onclick="triggerPhoto()"><span class="btn-icon">📷</span> TAKE PHOTO</button>
+    <button class="media-btn" onclick="triggerVideo()"><span class="btn-icon">🎬</span> RECORD VIDEO</button>
+  </div>
+
+  <div class="media-preview" id="mediaPreview">
+    <img id="photoPreview" style="display:none">
+    <video id="videoPreview" style="display:none" muted playsinline controls></video>
+    <div class="media-info-bar">
+      <span class="media-info" id="mediaInfo"></span>
+      <button class="clear-media-btn" onclick="clearMedia()">✕ CLEAR</button>
+    </div>
+  </div>
+
+  <div class="processing-steps" id="processingSteps">
+    <div class="step" id="pStep1"><span>⬜</span> Extracting key frames from video</div>
+    <div class="step" id="pStep2"><span>⬜</span> Analyzing brightness variance and flicker patterns</div>
+    <div class="step" id="pStep3"><span>⬜</span> Transcribing audio — detecting transformer sounds</div>
+    <div class="step" id="pStep4"><span>⬜</span> Fusing weather data and neighborhood memory</div>
+    <div class="step" id="pStep5"><span>⬜</span> Running Gemma 4 multimodal analysis</div>
+  </div>
+
+  <div class="text-input-row">
+    <textarea class="text-input" id="textInput" placeholder="What are you noticing right now? Describe a hum, a flicker, a crew van, sparks, anything unusual..." oninput="autoResize(this)" rows="2"></textarea>
+    <button class="mic-btn" id="micBtn" onclick="toggleVoice()" title="Voice input">🎤</button>
+  </div>
+
+  <div class="lang-detected" id="langDetected"></div>
+  <div class="guidance-msg" id="guidanceMsg"></div>
+
+  <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none" onchange="handlePhoto(event)">
+  <input type="file" id="videoInput" accept="video/*" capture="environment" style="display:none" onchange="handleVideo(event)">
+
+  <button class="submit-btn" id="submitBtn" onclick="submitReport()">⚡ ANALYZE WITH GEMMA 4</button>
+</div>
+
+<!-- 03 REASONING TRACE -->
+<div class="card" id="traceCard" style="display:none">
+  <div class="section-num">03</div>
+  <div class="card-label">GEMMA 4 REASONING TRACE</div>
+  <div id="traceContent"></div>
+  <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-muted);margin-top:16px;text-align:center">// FULL TRANSPARENCY — SHOWING EXACTLY WHY THIS PREDICTION WAS MADE //</div>
+</div>
+
+<!-- 04 PROTOCOL CHECKLIST -->
+<div class="card" id="actionCard" style="display:none">
+  <div class="section-num">04</div>
+  <div class="card-label">EMERGENCY PROTOCOL — PERSONALIZED CHECKLIST</div>
+  <div id="actionList"></div>
+  <div class="action-progress" id="actionProgress">START WITH STEP 1</div>
+</div>
+
+<!-- 05 REGIONAL GRID -->
+<div class="card" id="regionCard" style="display:none">
+  <div class="section-num">05</div>
+  <div class="card-label">NEIGHBORHOOD RISK GRID</div>
+  <div class="region-grid" id="regionGrid"></div>
+  <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-muted);margin-top:14px;text-align:center">// RISK LEVELS ACROSS YOUR AREA — DARKER RED = HIGHER RISK //</div>
+</div>
+
+<!-- 06 LIVE MAP -->
+<div class="card" id="mapCard" style="display:none">
+  <div class="section-num">06</div>
+  <div class="card-label">LIVE OUTAGE INTELLIGENCE MAP</div>
+  <div id="live-map"></div>
+  <div class="map-legend">
+    <div class="map-legend-item"><div class="legend-dot" style="background:#00C853;box-shadow:0 0 6px rgba(0,200,83,.5)"></div>STABLE</div>
+    <div class="map-legend-item"><div class="legend-dot" style="background:#FFA500;box-shadow:0 0 6px rgba(255,165,0,.5)"></div>ELEVATED</div>
+    <div class="map-legend-item"><div class="legend-dot" style="background:#FF3B3B;box-shadow:0 0 6px rgba(255,59,59,.5)"></div>CRITICAL</div>
+    <div class="map-legend-item"><div class="legend-dot" style="background:#00D1FF;box-shadow:0 0 8px rgba(0,209,255,.6)"></div>YOU</div>
+  </div>
+</div>
+
+<!-- 07 HEATMAP -->
+<div class="card" id="heatmapCard" style="display:none">
+  <div class="section-num">07</div>
+  <div class="card-label">7-DAY OUTAGE FORECAST HEATMAP</div>
+  <div id="heatmapContent"></div>
+  <div class="heatmap-legend">
+    <span class="legend-text">SAFE</span>
+    <div class="legend-bar"></div>
+    <span class="legend-text">OUTAGE LIKELY</span>
+  </div>
+  <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--text-muted);margin-top:12px;text-align:center">
+    // HOVER OVER ANY CELL TO SEE HOUR AND RISK LEVEL //
+  </div>
+</div>
+
+<!-- STORY PANELS -->
+<div class="story-panel">
+  <div>
+    <div style="font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:3px;color:var(--cyan);margin-bottom:16px">01 //</div>
+    <div class="story-heading">POWER GOES.<br>YOU KNEW.</div>
+    <p class="story-sub">GridSense is the first neighborhood early-warning network powered by fine-tuned Gemma 4 multimodal AI. It synthesizes what your community notices — sights, sounds, photos, video — into a calibrated outage prediction with full reasoning transparency.</p>
+    <div class="stats-row">
+      <div class="stat-box"><div class="stat-num">1.5B</div><div class="stat-label">PEOPLE AFFECTED</div></div>
+      <div class="stat-box"><div class="stat-num">8</div><div class="stat-label">CITIES TRAINED ON</div></div>
+      <div class="stat-box"><div class="stat-num">800</div><div class="stat-label">TRAINING EXAMPLES</div></div>
+      <div class="stat-box"><div class="stat-num">6</div><div class="stat-label">ACCURACY LAYERS</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="story-panel">
+  <div>
+    <div style="font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:3px;color:var(--cyan);margin-bottom:16px">02 //</div>
+    <div class="story-heading" style="font-size:40px">THE PROBLEM<br>NOBODY MEASURES</div>
+    <p class="story-sub">1.5 billion people lose hours of work, food, money, and sleep every week to outages they were never warned about. The data exists — it lives in what your neighbors notice. Nobody had built the tool to read it.</p>
+    <p class="story-sub" style="margin-top:16px">Until now.</p>
+  </div>
+</div>
+
+<div class="story-panel">
+  <div>
+    <div style="font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:3px;color:var(--cyan);margin-bottom:16px">03 //</div>
+    <div class="story-heading" style="font-size:38px">WHAT COMES NEXT</div>
+    <div class="roadmap-phases">
+      <div class="phase"><strong>PHASE 1 — GRIDSENSE GEMMA EDGE (LIVE)</strong>Multimodal neighborhood intelligence. Photo, video, voice, text. Fine-tuned Gemma 4. Six accuracy layers.</div>
+      <div class="phase"><strong>PHASE 2 — SMS ACCESS</strong>The same brain via text message for 2.6 billion people without smartphones.</div>
+      <div class="phase"><strong>PHASE 3 — UTILITY PARTNERSHIPS</strong>Official feeds from UMEME, Eskom, K-Electric, PG&E, Meralco amplifying community signals with authoritative grid data.</div>
+      <div class="phase"><strong>PHASE 4 — IOT GRID NODE</strong>A $15 device clipped to your breaker panel that monitors voltage signatures and feeds verified electrical data directly into the network — no typing required.</div>
+      <div class="phase"><strong>PHASE 5 — THE DATA COMMONS</strong>Every confirmed prediction becomes training data for the next generation of grid intelligence. GridSense is not just a warning system — it is data infrastructure for the future.</div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  2026 GRIDSENSE GEMMA EDGE // BUILT IN MUKONO, UGANDA //<br>
+  POWERED BY FINE-TUNED GEMMA 4 + UNSLOTH + AWS // #GEMMA4GOOD<br>
+  <span style="color:rgba(74,94,114,.5)">EVERY REPORT MAKES THE NETWORK SMARTER</span>
+</footer>
+
+</div>
+
+<script>
+// ═══ AURORA ═══
+const canvas = document.getElementById('aurora-canvas');
+const ctx = canvas.getContext('2d');
+function resizeCanvas(){canvas.width=window.innerWidth;canvas.height=window.innerHeight}
+resizeCanvas();
+window.addEventListener('resize',resizeCanvas);
+
+let mx=window.innerWidth/2,my=window.innerHeight/2,tx=mx,ty=my,cx=mx,cy=my;
+document.addEventListener('mousemove',e=>{tx=e.clientX;ty=e.clientY});
+document.addEventListener('touchmove',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY},{passive:true});
+
+const COLORS=[[0,209,255],[107,43,255],[0,180,120],[64,224,255],[180,50,255],[0,150,200]];
+const particles=[];
+
+function spawnP(){
+  const c=COLORS[Math.floor(Math.random()*COLORS.length)];
+  particles.push({x:cx,y:cy,vx:(Math.random()-.5)*1.4,vy:(Math.random()-.5)*1.4,life:1,decay:.01+Math.random()*.008,size:55+Math.random()*75,color:c});
+}
+
+function animAurora(){
+  cx+=(tx-cx)*.07;cy+=(ty-cy)*.07;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if(Math.random()<.3)spawnP();
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.x+=p.vx;p.y+=p.vy;p.life-=p.decay;
+    if(p.life<=0){particles.splice(i,1);continue}
+    const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.size);
+    g.addColorStop(0,`rgba(${p.color[0]},${p.color[1]},${p.color[2]},${p.life*.22})`);
+    g.addColorStop(.6,`rgba(${p.color[0]},${p.color[1]},${p.color[2]},${p.life*.06})`);
+    g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();
+  }
+  requestAnimationFrame(animAurora);
+}
+animAurora();
+
+// ═══ STATE ═══
+let selectedFile=null,fileType=null,currentProb=0,actionsDone=new Set(),lastReportId=null;
+let currentLat=null,currentLon=null,mapInstance=null,mapMarkers=[];
+let weatherData=null;
+let currentCity='Unknown',currentNeighborhood='Unknown area';
+
+// ═══ LOCATION + WEATHER ═══
+if(navigator.geolocation){
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    currentLat=pos.coords.latitude;
+    currentLon=pos.coords.longitude;
+    document.getElementById('memoryDot').className='dot dot-green';
+    document.getElementById('memoryStatus').textContent='LOCATION: ACQUIRED';
+    initMap();
+    loadWeather();
+
+    // ── Reverse geocode to get real city + neighborhood ───────────────────
+    try{
+      const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${currentLat}&lon=${currentLon}&format=json`,{headers:{'Accept-Language':'en'}});
+      const d=await r.json();
+      const a=d.address||{};
+
+      // City: try multiple fields in order of specificity
+      currentCity = a.city||a.town||a.village||a.county||a.state||'Unknown';
+
+      // Neighborhood: most specific local area available
+      currentNeighborhood = a.suburb||a.neighbourhood||a.quarter||a.residential||a.hamlet||a.district||currentCity;
+
+      // Show on status bar
+      document.getElementById('memoryStatus').textContent=`📍 ${currentNeighborhood}, ${currentCity}`;
+
+      // Show a small location pill under the tagline
+      let locPill=document.getElementById('locPill');
+      if(!locPill){
+        locPill=document.createElement('div');
+        locPill.id='locPill';
+        locPill.style.cssText='font-family:Share Tech Mono,monospace;font-size:11px;color:var(--cyan);text-align:center;margin-top:8px;padding:6px 14px;border:1px solid rgba(0,209,255,.2);border-radius:100px;display:inline-block;background:rgba(0,209,255,.05)';
+        document.querySelector('header').appendChild(locPill);
+      }
+      locPill.textContent=`📍 ${currentNeighborhood}, ${currentCity}`;
+
+    }catch(e){
+      console.warn('Reverse geocode failed:',e);
+      currentCity='Unknown';
+      currentNeighborhood='Unknown area';
+    }
+
+  },()=>{
+    document.getElementById('memoryStatus').textContent='MEMORY: ALLOW LOCATION FOR BEST RESULTS';
+  });
+}
+
+async function loadWeather(){
+  if(!currentLat||!currentLon)return;
+  try{
+    const url=`https://api.open-meteo.com/v1/forecast?latitude=${currentLat}&longitude=${currentLon}&current=temperature_2m,precipitation,wind_speed_10m,cloud_cover,weather_code,wind_gusts_10m&timezone=auto`;
+    const r=await fetch(url);
+    const d=await r.json();
+    const c=d.current;
+    weatherData=c;
+
+    const icons={0:'☀️',1:'🌤',2:'⛅',3:'☁️',45:'🌫',48:'🌫',51:'🌦',53:'🌦',55:'🌧',61:'🌧',63:'🌧',65:'🌧',80:'🌦',81:'🌧',82:'⛈',95:'⛈',99:'⛈'};
+    const conds={0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',48:'Icy fog',51:'Light drizzle',53:'Moderate drizzle',55:'Dense drizzle',61:'Light rain',63:'Moderate rain',65:'Heavy rain',80:'Rain showers',81:'Heavy showers',82:'Violent showers',95:'Thunderstorm',99:'Heavy thunderstorm'};
+    
+    const code=c.weather_code||0;
+    const icon=icons[code]||'🌤';
+    const cond=conds[code]||'Unknown';
+    const temp=Math.round(c.temperature_2m||0);
+    const wind=Math.round(c.wind_speed_10m||0);
+    const rain=(c.precipitation||0).toFixed(1);
+    
+    // Calculate grid risk
+    let risk=0;
+    if(rain>5)risk+=30;else if(rain>1)risk+=15;
+    if(wind>50)risk+=30;else if(wind>30)risk+=20;else if(wind>15)risk+=10;
+    if([95,99,82].includes(code))risk+=30;else if([80,81,63,65].includes(code))risk+=15;
+    risk=Math.min(100,risk);
+    
+    const riskLabel=risk>=60?'HIGH':risk>=35?'MODERATE':risk>=15?'LOW':'MINIMAL';
+    const riskColor=risk>=60?'var(--danger)':risk>=35?'var(--amber)':risk>=15?'var(--cyan)':'var(--success)';
+    
+    document.getElementById('weatherWidget').style.display='block';
+    document.getElementById('weatherIcon').textContent=icon;
+    document.getElementById('weatherTemp').textContent=`${temp}°C`;
+    document.getElementById('weatherCondition').textContent=cond;
+    document.getElementById('weatherMeta').textContent=`Wind ${wind} km/h · Rain ${rain}mm`;
+    document.getElementById('weatherRiskLabel').textContent=riskLabel;
+    document.getElementById('weatherRiskLabel').style.color=riskColor;
+    document.getElementById('weatherRiskFill').style.width=risk+'%';
+    document.getElementById('weatherRiskFill').style.background=riskColor;
+    
+    document.getElementById('weatherDot').style.background=riskColor;
+    document.getElementById('weatherDot').style.boxShadow=`0 0 8px ${riskColor}`;
+    document.getElementById('weatherStatus').textContent=`WEATHER: ${cond.toUpperCase()} ${risk>30?'⚠':''}`;
+    
+  }catch(e){
+    document.getElementById('weatherStatus').textContent='WEATHER: UNAVAILABLE';
+  }
+}
+
+// ═══ MAP ═══
+function initMap(){
+  if(!currentLat||!currentLon||mapInstance)return;
+  document.getElementById('mapCard').style.display='block';
+  setTimeout(()=>{
+    mapInstance=L.map('live-map',{center:[currentLat,currentLon],zoom:13,zoomControl:true,attributionControl:false});
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19}).addTo(mapInstance);
+    
+    const youIcon=L.divIcon({html:'<div style="width:18px;height:18px;border-radius:50%;background:#00D1FF;border:2.5px solid #fff;box-shadow:0 0 16px rgba(0,209,255,.9),0 0 32px rgba(0,209,255,.4);"></div>',iconSize:[18,18],iconAnchor:[9,9],className:''});
+    L.marker([currentLat,currentLon],{icon:youIcon}).addTo(mapInstance).bindPopup('<div style="font-family:Share Tech Mono;color:#00D1FF;font-size:12px;font-weight:bold">📍 YOU ARE HERE</div>');
+    L.circle([currentLat,currentLon],{color:'rgba(0,209,255,.2)',fillColor:'rgba(0,209,255,.04)',fillOpacity:1,radius:1500,weight:1,dashArray:'4 4'}).addTo(mapInstance);
+  },300);
+}
+
+function updateMap(grid){
+  if(!mapInstance||!currentLat||!currentLon||!grid)return;
+  mapMarkers.forEach(m=>mapInstance.removeLayer(m));
+  mapMarkers=[];
+  grid.forEach((area,i)=>{
+    const p=area.probability||0;
+    const isUser=area.is_user_area;
+    const color=p>=65?'#FF3B3B':p>=40?'#FFA500':'#00C853';
+    const size=isUser?20:10+Math.floor(p/20)*2;
+    const lat=currentLat+(Math.random()-.5)*.022;
+    const lon=currentLon+(Math.random()-.5)*.022;
+    const icon=L.divIcon({html:`<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};opacity:.85;box-shadow:0 0 ${Math.floor(p/5)+4}px ${color};border:1px solid rgba(255,255,255,.25);" title="${area.name}: ${p}%"></div>`,iconSize:[size,size],iconAnchor:[size/2,size/2],className:''});
+    const m=L.marker([lat,lon],{icon}).addTo(mapInstance).bindPopup(`<div style="font-family:Share Tech Mono;color:${color};font-size:11px;line-height:1.6"><b>${area.name}</b><br>Risk: ${p}%${isUser?' ← YOU':''}</div>`);
+    mapMarkers.push(m);
+    // Animate in with delay
+    setTimeout(()=>{if(mapInstance)m.addTo(mapInstance)},i*30);
+  });
+}
+
+// ═══ MEDIA ═══
+function triggerPhoto(){document.getElementById('photoInput').click()}
+function triggerVideo(){document.getElementById('videoInput').click()}
+function handlePhoto(e){
+  const f=e.target.files[0];if(!f)return;
+  selectedFile=f;fileType='photo';
+  const img=document.getElementById('photoPreview');
+  img.src=URL.createObjectURL(f);img.style.display='block';
+  document.getElementById('videoPreview').style.display='none';
+  document.getElementById('mediaInfo').textContent=`📷 Photo · ${(f.size/1024).toFixed(0)}KB · Ready for Gemma 4 analysis`;
+  document.getElementById('mediaPreview').style.display='block';
+}
+function handleVideo(e){
+  const f=e.target.files[0];if(!f)return;
+  if(f.size>50*1024*1024){showGuidance('Video exceeds 50MB. Try under 30 seconds.');return}
+  selectedFile=f;fileType='video';
+  const v=document.getElementById('videoPreview');
+  v.src=URL.createObjectURL(f);v.style.display='block';
+  document.getElementById('photoPreview').style.display='none';
+  document.getElementById('mediaInfo').textContent=`🎬 Video · ${(f.size/1024/1024).toFixed(1)}MB · Gemma 4 will analyze frames + audio`;
+  document.getElementById('mediaPreview').style.display='block';
+}
+function clearMedia(){
+  selectedFile=null;fileType=null;
+  document.getElementById('photoPreview').style.display='none';
+  document.getElementById('videoPreview').style.display='none';
+  document.getElementById('mediaPreview').style.display='none';
+  document.getElementById('photoInput').value='';
+  document.getElementById('videoInput').value='';
+}
+
+// ═══ VOICE ═══
+let recognition=null,isRecording=false;
+function toggleVoice(){
+  if(!('webkitSpeechRecognition'in window)&&!('SpeechRecognition'in window)){showGuidance('Voice input not supported. Try Chrome.');return}
+  if(isRecording){recognition.stop();return}
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  recognition=new SR();
+  recognition.continuous=false;recognition.interimResults=true;recognition.lang=navigator.language||'en-US';
+  recognition.onstart=()=>{isRecording=true;document.getElementById('micBtn').classList.add('recording')};
+  recognition.onresult=e=>{
+    const t=Array.from(e.results).map(r=>r[0].transcript).join('');
+    document.getElementById('textInput').value=t;autoResize(document.getElementById('textInput'));
+  };
+  recognition.onend=()=>{isRecording=false;document.getElementById('micBtn').classList.remove('recording')};
+  recognition.start();
+}
+function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,200)+'px'}
+
+// ═══ SUBMIT ═══
+async function submitReport(){
+  const text=document.getElementById('textInput').value.trim();
+  if(!selectedFile&&!text){showGuidance('Add a photo, video, or describe what you are noticing.');return}
+  
+  const btn=document.getElementById('submitBtn');
+  btn.disabled=true;btn.classList.add('loading');
+  
+  let secs=0;
+  const interval=setInterval(()=>{
+    secs++;
+    btn.textContent=`⚡ GEMMA 4 ANALYZING... ${secs}s`;
+  },1000);
+  
+  if(fileType==='video')showProcessingSteps();
+  
+  const fd=new FormData();
+  fd.append('text_report',text);
+  fd.append('city',getCity());
+  fd.append('neighborhood',getNeighborhood());
+  if(currentLat)fd.append('lat',currentLat);
+  if(currentLon)fd.append('lon',currentLon);
+  fd.append('user_profile',JSON.stringify(getProfile()));
+  if(selectedFile){
+    if(fileType==='video')fd.append('video',selectedFile);
+    else fd.append('image',selectedFile);
+  }
+  
+  try{
+    const ctrl=new AbortController();
+    const tid=setTimeout(()=>ctrl.abort(),300000);
+    const r=await fetch('/analyze',{method:'POST',body:fd,signal:ctrl.signal});
+    clearTimeout(tid);
+    if(!r.ok){const e=await r.json().catch(()=>({detail:'Unknown error'}));showGuidance(e.detail||'Analysis failed.');return}
+    const result=await r.json();
+    if(result.validation_rejected){showGuidance(result.guidance_message||'Input rejected.');return}
+    renderResult(result);
+    // Update brain badge
+    if(result.brain_source){
+      const src=result.brain_source;
+      const badge=document.getElementById('brainBadge');
+      if(src.includes('aws'))badge.textContent='FINE-TUNED GEMMA 4 // AWS T4';
+      else if(src.includes('gemini'))badge.textContent='GEMMA 4 // GOOGLE AI';
+      else if(src.includes('openrouter'))badge.textContent='GEMMA 4 // OPENROUTER';
+      else if(src.includes('nvidia'))badge.textContent='GEMMA 4 31B // NVIDIA NIM';
+      else badge.textContent='GEMMA 4';
+    }
+  }catch(e){
+    if(e.name==='AbortError')showGuidance('Analysis timed out. Please try again.');
+    else showGuidance('Connection error. Make sure the server is running.');
+  }finally{
+    clearInterval(interval);
+    btn.disabled=false;btn.classList.remove('loading');
+    btn.textContent='⚡ ANALYZE WITH GEMMA 4';
+    hideProcessingSteps();
+  }
+}
+
+// ═══ RENDER ═══
+function renderResult(data){
+  const prob=data.probability||0;
+  currentProb=prob;lastReportId=data.report_id;
+  
+  updateRing(prob,data);
+  renderTrace(data.reasoning_trace);
+  renderActions(data.actions||[]);
+  renderRegionalGrid(data.regional_grid);
+  renderHeatmap(data.weekly_heatmap);
+  updateMap(data.regional_grid);
+  
+  if(data.memory_reports_used>0){
+    const mn=document.getElementById('memoryNote');
+    mn.style.display='block';
+    mn.textContent=`// GEMMA 4 RETRIEVED ${data.memory_reports_used} PAST REPORTS FROM THIS NEIGHBORHOOD //`;
+    document.getElementById('memoryDot').className='dot dot-green';
+    document.getElementById('memoryStatus').textContent=`MEMORY: ${data.memory_reports_used} PAST REPORTS`;
+  }
+  
+  if(data.neighborhood_accuracy&&data.neighborhood_accuracy.accuracy_available){
+    const a=data.neighborhood_accuracy;
+    document.getElementById('accuracyRow').style.display='flex';
+    document.getElementById('accPercent').textContent=a.accuracy_percent+'%';
+    document.getElementById('accTotal').textContent=a.total_confirmed;
+    document.getElementById('accConfirmed').textContent=a.total_outages_confirmed||0;
+  }
+  
+  if(data.utility_future_note){
+    const un=document.getElementById('utilityNote');
+    un.style.display='block';
+    un.textContent='⚡ UTILITY INSIGHT: '+data.utility_future_note;
+  }
+  
+  if(data.guidance_message)showGuidance(data.guidance_message);
+  
+  if(data.detected_language&&data.detected_language!=='en'){
+    const ld=document.getElementById('langDetected');
+    ld.style.display='block';
+    ld.textContent=`// INPUT TRANSLATED FROM ${data.detected_language.toUpperCase()} //`;
+  }
+  
+  setTimeout(()=>{document.getElementById('outcomeRow').style.display='flex'},6000);
+  
+  document.getElementById('traceCard').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function updateRing(prob,data){
+  const circ=816.81;
+  const offset=circ-(prob/100)*circ;
+  const fill=document.getElementById('ringFill');
+  const num=document.getElementById('ringNumber');
+  
+  fill.style.strokeDashoffset=offset;
+  
+  let color,label,glow,pillBg;
+  if(prob>=80){
+    color='#FF3B3B';label='STATUS: CRITICAL — ACT NOW';glow='rgba(255,59,59,.5)';pillBg='rgba(255,59,59,.12)';
+    document.getElementById('warningBanner').className='warning-banner critical';
+    document.getElementById('warningBanner').style.display='block';
+    document.getElementById('brainStatus').textContent='CRITICAL ALERT';
+  }else if(prob>=65){
+    color='#FF8533';label='STATUS: WARNING';glow='rgba(255,133,51,.4)';pillBg='rgba(255,133,51,.12)';
+    document.getElementById('warningBanner').className='warning-banner warning';
+    document.getElementById('warningBanner').style.display='block';
+    document.getElementById('brainStatus').textContent='WARNING DETECTED';
+  }else if(prob>=40){
+    color='#FFA500';label='STATUS: ELEVATED';glow='rgba(255,165,0,.3)';pillBg='rgba(255,165,0,.1)';
+    document.getElementById('warningBanner').style.display='none';
+    document.getElementById('brainStatus').textContent='ELEVATED RISK';
+  }else{
+    color='#00C853';label='STATUS: STABLE';glow='rgba(0,200,83,.25)';pillBg='rgba(0,200,83,.08)';
+    document.getElementById('warningBanner').style.display='none';
+    document.getElementById('brainStatus').textContent='STABLE';
+  }
+  
+  fill.style.stroke=color;
+  fill.style.filter=`drop-shadow(0 0 16px ${glow})`;
+  num.style.color=color;
+  num.style.textShadow=`0 0 40px ${glow}`;
+  
+  const pill=document.getElementById('statusPill');
+  pill.textContent=label;pill.style.color=color;
+  pill.style.background=pillBg;
+  pill.style.borderColor=`${color}40`;
+  
+  // Animated counter
+  const start=parseInt(num.textContent)||0;
+  const dur=1200;const t0=performance.now();
+  (function tick(now){
+    const p=Math.min((now-t0)/dur,1);
+    const e=1-Math.pow(1-p,3);
+    num.textContent=Math.round(start+(prob-start)*e);
+    if(p<1)requestAnimationFrame(tick);
+  })(performance.now());
+  
+  // Explanation and countdown
+  document.getElementById('explanationText').textContent=data.explanation||'Analysis complete.';
+  const conf=data.confidence||'LOW';
+  const confEl=document.getElementById('ringConfidence');
+  confEl.textContent=`SIGNAL CONFIDENCE: ${conf}`;
+  const cc={INSUFFICIENT:'#4A5E72',LOW:'#FFA500',MEDIUM:'#00D1FF',HIGH:'#00C853'};
+  confEl.style.color=cc[conf]||'#7B8FA3';
+  
+  if(prob>=65&&data.countdown){
+    document.getElementById('warningText').textContent=data.countdown.toUpperCase();
+  }else if(prob>=65){
+    document.getElementById('warningText').textContent='ELEVATED OUTAGE RISK — PREPARE NOW';
+  }
+}
+
+function renderTrace(trace){
+  if(!trace||!trace.length)return;
+  document.getElementById('traceCard').style.display='block';
+  document.getElementById('traceContent').innerHTML=trace.map((item,i)=>`
+    <div class="trace-item" style="animation-delay:${i*80}ms">
+      <span class="trace-num">${String(i+1).padStart(2,'0')}</span>
+      <span>${item}</span>
+    </div>`).join('');
+}
+
+function renderActions(actions){
+  if(!actions||!actions.length)return;
+  document.getElementById('actionCard').style.display='block';
+  actionsDone.clear();updateActionProgress();
+  document.getElementById('actionList').innerHTML=actions.map((a,i)=>`
+    <div class="action-item" id="act-${i}" onclick="toggleAction(${i})" style="animation-delay:${i*60}ms">
+      <div class="action-check" id="chk-${i}"></div>
+      <div class="action-text">${a}</div>
+    </div>`).join('');
+}
+
+function toggleAction(i){
+  const item=document.getElementById(`act-${i}`);
+  const chk=document.getElementById(`chk-${i}`);
+  if(actionsDone.has(i)){actionsDone.delete(i);item.classList.remove('done');chk.textContent=''}
+  else{actionsDone.add(i);item.classList.add('done');chk.textContent='✓'}
+  updateActionProgress();
+}
+
+function updateActionProgress(){
+  const total=document.querySelectorAll('.action-item').length||5;
+  const done=actionsDone.size;
+  const msgs=['START WITH STEP 1 →','1 COMPLETE — KEEP GOING','2 COMPLETE — HALFWAY THERE','3 COMPLETE — ALMOST READY','4 COMPLETE — ONE MORE','✓ ALL COMPLETE — YOU ARE PREPARED'];
+  const el=document.getElementById('actionProgress');
+  el.textContent=msgs[done]||`${done} OF ${total} COMPLETE`;
+  el.style.color=done===total?'var(--success)':done>=3?'var(--cyan)':'var(--text-muted)';
+  el.style.background=done===total?'var(--success-dim)':'rgba(0,0,0,.2)';
+  el.style.border=done===total?'1px solid rgba(0,200,83,.3)':'none';
+}
+
+function renderRegionalGrid(grid){
+  if(!grid||!grid.length)return;
+  document.getElementById('regionCard').style.display='block';
+  document.getElementById('regionGrid').innerHTML=grid.map((area,i)=>{
+    const p=area.probability||0;
+    const isUser=area.is_user_area;
+    const color=p>=65?'#FF3B3B':p>=40?'#FFA500':'#00C853';
+    const bg=p>=65?'rgba(255,59,59,.08)':p>=40?'rgba(255,165,0,.08)':'rgba(0,200,83,.06)';
+    const glow=p>=65?`0 0 20px rgba(255,59,59,.25)`:p>=40?`0 0 14px rgba(255,165,0,.2)`:`0 0 12px rgba(0,200,83,.15)`;
+    return `<div class="region-cell${isUser?' user-area':''}" style="background:${bg};border-color:${isUser?'var(--cyan)':color+'35'};box-shadow:${isUser?'0 0 24px var(--cyan-dim),'+glow:glow};min-width:${isUser?'145px':'110px'};animation-delay:${i*30}ms">
+      <div class="region-name" style="color:${isUser?'var(--cyan)':'var(--text-muted)'}">${area.name}</div>
+      <div class="region-prob" style="color:${color}">${p}%</div>
+      ${isUser?`<div class="region-you" style="color:var(--cyan)">← YOU</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderHeatmap(data){
+  if(!data)return;
+  document.getElementById('heatmapCard').style.display='block';
+  const days=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  let html='<div class="heatmap-grid">';
+  days.forEach(day=>{
+    html+=`<div class="hm-label">${day.slice(0,3)}</div>`;
+    const hours=data[day]||new Array(24).fill(20);
+    hours.forEach((p,h)=>{
+      const c=heatColor(p);
+      const glow=p>=65?`box-shadow:0 0 5px ${c};`:'';
+      html+=`<div class="hm-cell" style="background:${c};${glow}" title="${day} ${h}:00 — ${p}% risk"></div>`;
+    });
+  });
+  html+='</div><div class="hm-hour-row"><div></div>';
+  for(let h=0;h<24;h++)html+=`<div class="hm-hour-label">${h%6===0?h+'h':''}</div>`;
+  html+='</div>';
+  document.getElementById('heatmapContent').innerHTML=html;
+}
+
+function heatColor(p){
+  if(p<=5)return'#0A1520';if(p<=15)return'#0D2028';if(p<=30)return'#102530';
+  if(p<=45)return'#1A2A2A';if(p<=60)return'#2A2A1A';if(p<=75)return'#3A1F0A';
+  if(p<=85)return'#4A0A0A';return'#6A0505';
+}
+
+// ═══ OUTCOME ═══
+async function confirmOutcome(outcome){
+  if(!lastReportId)return;
+  try{
+    await fetch(`/confirm-outcome?report_id=${lastReportId}&outcome=${outcome}`,{method:'POST'});
+    document.getElementById('outcomeRow').innerHTML=`<div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--success);width:100%;text-align:center;padding:12px;border:1px solid rgba(0,200,83,.2);border-radius:10px;background:rgba(0,200,83,.05)">✓ CONFIRMED — GRIDSENSE NEIGHBORHOOD MEMORY UPDATED</div>`;
+    document.getElementById('memoryDot').className='dot dot-green';
+    document.getElementById('memoryStatus').textContent='MEMORY: JUST UPDATED';
+  }catch(e){console.error(e)}
+}
+
+// ═══ PROCESSING STEPS ═══
+function showProcessingSteps(){
+  document.getElementById('processingSteps').style.display='block';
+  const steps=[['pStep1',0],['pStep2',4000],['pStep3',9000],['pStep4',14000],['pStep5',18000]];
+  steps.forEach(([id,delay])=>{
+    setTimeout(()=>{
+      const el=document.getElementById(id);
+      el.classList.remove('active');el.classList.add('done');
+      el.querySelector('span').textContent='✅';
+    },delay);
+    if(delay>0)setTimeout(()=>{
+      const el=document.getElementById(id);el.classList.add('active');
+      el.querySelector('span').textContent='⏳';
+    },delay-1000);
+  });
+}
+function hideProcessingSteps(){
+  document.getElementById('processingSteps').style.display='none';
+  ['pStep1','pStep2','pStep3','pStep4','pStep5'].forEach(id=>{
+    const el=document.getElementById(id);
+    el.className='step';el.querySelector('span').textContent='⬜';
+  });
+}
+
+// ═══ GUIDANCE ═══
+function showGuidance(msg){
+  const el=document.getElementById('guidanceMsg');
+  el.style.display='block';el.textContent=msg;
+  setTimeout(()=>{el.style.display='none'},7000);
+}
+
+// ═══ PROFILE HELPERS ═══
+function getProfile(){try{return JSON.parse(localStorage.getItem('gsProfile')||'{}')}catch{return{}}}
+function getCity(){return currentCity||getProfile().location||'Unknown'}
+function getNeighborhood(){return currentNeighborhood||getProfile().location?.split(',')[0]||'Unknown area'}
+</script>
+</body>
+</html>
