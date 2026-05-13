@@ -109,6 +109,25 @@ outages deserve to understand what is coming and why.
 | 6 | Static fallback response | Never fails silently |
 
 ---
+### Why The Inference Priority Chain
+
+My development machine has an Intel i5 processor, 8GB RAM, and no GPU. Loading Gemma 4 E2B consumed all available memory before a single token was generated. With llama.cpp and every quantization level I tried, response times were 5 to 8 minutes per prediction. That is not a usable experience. Paid cloud GPU compute on AWS, Google Cloud, or Railway was financially impossible. The total budget for this project was zero dollars. Not a small budget. This is the reality of a university student in Uganda trying to solve a long-ignored problem.
+
+To overcome this, I used Kaggle’s free T4 GPU environment to run the fine-tuned model during development and demonstration. Kaggle provides limited but powerful GPU sessions, which made it possible to load and test the model in a real inference setting. I exposed the running Kaggle notebook through NGROK to create a temporary API endpoint that allows external access for demos and evaluation. However, Kaggle sessions are time-limited and cannot stay active continuously, which makes them unsuitable for permanent deployment.
+
+Because of this limitation, I designed a hybrid inference chain so the system can still be experienced even when Kaggle or NGROK sessions are offline. The application falls back to freely available Gemma 4 API endpoints using rotating free-tier keys. This ensures continuity of access despite strict rate limits and infrastructure constraints.
+
+Google AI Studio provides approximately 50 requests per day, while OpenRouter throttles heavily per key after about 20 requests per hour. A single key or provider would make the system unavailable for large portions of the day. Key rotation is therefore not a workaround, but an architectural response to severe resource limitations.
+
+The goal was simple: ensure GridSense remains accessible long enough for users and judges to interact with it, test it, and understand its impact, even without paid infrastructure. A system that cannot be accessed cannot be evaluated, regardless of how strong the underlying model is.
+
+The fine-tuned model itself performs reliably whenever the Kaggle NGROK endpoint is active. The limitation was never model capability, but compute accessibility and deployment constraints.
+
+GridSense therefore uses a hybrid inference architecture built for extreme resource scarcity—combining local experimentation, Kaggle GPU sessions, temporary NGROK exposure, fallback APIs, and request distribution strategies. These were not convenience decisions, but necessary engineering tradeoffs to keep the system functional in a zero-budget environment.
+
+In many engineering contexts, scalability is assumed. In this case, continuity under constraint was the real challenge.
+
+---
 
 ### Output Flow
 
