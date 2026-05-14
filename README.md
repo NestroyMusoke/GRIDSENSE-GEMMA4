@@ -101,12 +101,11 @@ outages deserve to understand what is coming and why.
 
 | Priority | Model / System | Description |
 |----------|--------------|-------------|
-| 1 | GridSense LoRA (Kaggle / Colab) | Fine-tuned Gemma 4 E2B |
-| 2 | Google AI Studio Gemma 4 | API fallback |
-| 3 | OpenRouter (3 models × 6 keys) | Rotated multi-key fallback |
-| 4 | NVIDIA NIM Gemma 4 31B | Fallback |
-| 5 | Groq Gemma 2 9B | Fast fallback |
-| 6 | Static fallback response | Never fails silently |
+| 1 | GridSense LoRA (Kaggle / Ngrok) | Fine-tuned Gemma 4 E2B |
+| 2 | Google AI Studio Gemma 4 26B | API fallback |
+| 3 | OpenRouter Gemma 4 26B (6 keys) | Rotated multi-key fallback |
+| 4 | NVIDIA NIM Gemma 4 31B (4 keys) | Fallback |
+| 5 | Static fallback response | Never fails silently |
 
 ---
 ### Why The Inference Priority Chain
@@ -125,7 +124,7 @@ The fine-tuned model itself performs reliably whenever the Kaggle NGROK endpoint
 
 GridSense therefore uses a hybrid inference architecture built for extreme resource scarcity—combining local experimentation, Kaggle GPU sessions, temporary NGROK exposure, fallback APIs, and request distribution strategies. These were not convenience decisions, but necessary engineering tradeoffs to keep the system functional in a zero-budget environment.
 
-In many engineering contexts, scalability is assumed. In this case, continuity under constraint was the real challenge.
+In many engineering contexts, scalability is assumed. In this case, continuity under constraint was the real challenge. But with more iterations of gridsense,Independent Local Inference on better hardware will be achieved. 
 
 ---
 
@@ -292,16 +291,8 @@ but requires more training data for fine-grained middle-range calibration.
 - **Location:** Kampala, Uganda — Bulenga 
 - **Report:** Lights flickering for over 1 hour  
 - **Weather Signal:** 77% rain probability in next 6 hours  
-- **Prediction:** 46% — **MEDIUM confidence** ✅ Appropriate  
-
----
-
-### Case 2
-
-- **Location:** Unknown  
-- **Report:** Lights have been on steadily  
-- **Prediction:** 26% — **LOW confidence** ✅ Appropriate
-
+- **Prediction:** 46% — **MEDIUM confidence** ✅ Appropriate
+  
   ---
 
 ## Stack
