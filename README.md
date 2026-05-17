@@ -354,39 +354,300 @@ Set `GRIDSENSE_COLAB_URL` in `.env` to the ngrok URL printed by the notebook.
 
 ---
 
-## The Roadmap
+## The RoadMap
 
-**Phase 1 — GridSense Gemma Edge (live now)**
-Multimodal neighborhood intelligence. Photo, video, voice, text. Fine-tuned Gemma 4.
-Six accuracy layers. Deployed and serving real predictions at zero cost.
+##  What's Next for GridSense
 
-**Phase 2 — Real Data Transition + Better Calibration**
-The outcome confirmation loop transitions training from synthetic to real. 5,000+
-confirmed prediction pairs replace the synthetic bootstrapping data. Probability
-calibration improves with every confirmed outcome. The bridge becomes the road.
-
-**Phase 3 — SMS Access**
-The same prediction engine via text message. No smartphone. No app. No internet
-connection required beyond basic SMS. For 2.6 billion people in the regions this
-problem hits hardest.
-
-**Phase 4 — Utility Partnerships**
-Official data feeds from UMEME, Eskom, K-Electric, Meralco, PG&E. Community signals
-amplified by authoritative grid telemetry.
-
-**Phase 5 — IoT Grid Node**
-A $15 device that clips to a breaker panel and monitors voltage signatures directly.
-Feeds verified electrical signal data into the network without any human reporting
-required.
-
-**Phase 6 — The Data Commons**
-Every confirmed GridSense prediction becomes a permanent labeled data point.
-The dataset that did not exist when this project started is built one real outcome
-at a time by the communities that need it most. GridSense becomes not just a warning
-system but the data infrastructure for grid intelligence in the developing world —
-a public good built on community participation.
+> Version 1.0 is a proof of concept that works end-to-end. What follows is an honest, specific engineering and product roadmap —
 
 ---
+
+##  Version 1.1 — Inference Infrastructure Overhaul
+
+**The single biggest weakness of the current system is inference reliability.** GridSense v1.0 depends entirely on free-tier APIs from Google AI Studio, OpenRouter, and NVIDIA NIM — all of which have rate limits, cold-start delays, and unpredictable availability. This is not acceptable for a community safety tool.
+
+### Self-Hosted Inference on VPS
+
+The target architecture replaces cloud API calls with a persistent, always-on Ollama server running on a dedicated VPS:
+
+- **Provider**: RunPod, Vast.ai, or Lambda Labs GPU instance — approximately $0.30–$0.60/hour for an RTX 3090 or A100
+- **Model**: GridSense LoRA adapter merged into a 4-bit GGUF and served via Ollama's REST API on port 11434
+- **Benefits**: No rate limits, no cold starts, sub-3-second response times, full control over the model
+- **Deployment**: Dockerised Ollama + FastAPI stack with nginx reverse proxy, SSL via Let's Encrypt
+- **Fallback**: Cloud APIs remain as fallback if the VPS is unreachable
+
+### Model Quantization Pipeline
+
+The current LoRA adapter needs a stable GGUF conversion pipeline that did not complete during v1.0 development due to VRAM constraints:
+
+- Upgrade Colab runtime to A100 (Colab Pro) for the GGUF export — sufficient VRAM to complete `model.save_pretrained_gguf` with q4_k_m quantization
+- Target: A single `gridsense-gemma4-e2b-q4_k_m.gguf` file (~1.3GB) that runs on consumer hardware
+- This enables the v2.0 offline Android app to run inference entirely on-device on mid-range phones
+
+### Inference Benchmarking
+
+Before production deployment, measure and document:
+- Tokens per second on RTX 3090 vs A100 vs CPU-only
+- First-token latency at different quantization levels (q4_k_m, q5_k_m, q8_0)
+- Memory usage per inference request to determine concurrent request capacity
+- Cost per 1,000 predictions at each cloud provider
+
+---
+
+##  Version 2.0 — Native Android Application
+
+**GridSense v1.0 is a PWA. Version 2.0 is a native Android app** — because PWAs cannot send background push notifications, cannot access the microphone reliably across all Android versions, and cannot run on-device inference. These three limitations are dealbreakers for a real community safety tool.
+
+### On-Device Inference with llama.cpp Android
+
+- Embed llama.cpp compiled for Android (ARM NEON + Android NDK) directly in the APK
+- Ship the `gridsense-gemma4-q4_k_m.gguf` model file within the app package or as a downloadable asset on first launch
+- On a mid-range Android phone (Snapdragon 695, 6GB RAM), q4_k_m inference runs at approximately 8–12 tokens/second — sufficient for a 300-token JSON response in under 40 seconds
+- **This means GridSense works with zero internet connection** — critical for communities where outages are accompanied by mobile data degradation
+
+### Push Notifications for Neighbourhood Alerts
+
+- When any user in a defined radius submits a high-probability report (above 65%), all other GridSense users in that radius receive a push notification within 60 seconds
+- Notification payload: "⚡ Outage risk rising in [Neighbourhood] — [X]% probability. [Countdown if available]"
+- Uses Firebase Cloud Messaging (FCM) — free tier handles 10M+ notifications/month
+- Users can configure their alert threshold (notify me at 40%, 65%, or 80% only) in settings
+
+### Background Grid Monitoring
+
+- Optional: Android background service that polls the GridSense backend every 15 minutes when on WiFi
+- If neighbourhood risk rises above the user's alert threshold since the last poll, a local notification fires
+- Battery-aware: uses WorkManager with NETWORK_AVAILABLE and BATTERY_NOT_LOW constraints
+- Stores the last 7 days of predictions locally in Room database for offline review
+
+### iOS Version
+
+- iOS app follows Android by approximately 6 months, built in Swift with Core ML for on-device inference
+- Core ML model converted from GGUF via coremltools — Apple Neural Engine acceleration on A15/A16 chips gives significantly faster inference than Android
+
+---
+
+##  Version 2.1 — SMS and USSD Access
+
+**Smartphones are not universal.** The most outage-affected communities in Sub-Saharan Africa, South Asia, and Southeast Asia have smartphone penetration below 40%. GridSense must reach feature phone users.
+
+### SMS Brain via Africa's Talking
+
+- Africa's Talking SMS gateway integration — operational in Kenya, Uganda, Tanzania, Nigeria, Ghana, Rwanda, Ethiopia
+- User texts a shortcode (e.g. `GS` to `20880`) with their observation: "Transformer humming Ntinda"
+- GridSense backend processes the SMS through the identical validation → weather → memory → Gemma 4 pipeline
+- Response SMS (maximum 160 characters): "GridSense: 72% outage risk. Charge devices. Store water. Check inverter. -GS"
+- Two-way: user can reply Y or N to confirm outcome, feeding the learning loop
+
+### USSD Menu for Structured Input
+
+- USSD code (e.g. `*483#`) launches a menu-based interface requiring zero data and zero app install
+- Menu: 1. Report signal → 2. Get area risk → 3. Confirm yesterday's prediction
+- USSD sessions are synchronous and complete within 20 seconds — compatible with all GSM networks
+- Available on any phone manufactured after 2003
+
+### WhatsApp Business API Bot
+
+- GridSense WhatsApp bot accessible via a single contact save + message
+- Accepts text, images, and voice notes — the same multimodal inputs as the web app
+- Processes through the same backend pipeline
+- Reaches the billion+ users already using WhatsApp for community communication in target markets
+
+---
+
+##  Version 2.2 — Training Data at Scale and Continuous Learning
+
+**GridSense v1.0 was trained on 800 synthetic examples.** That is enough to learn the output schema and domain vocabulary. It is not enough to learn the genuine statistical patterns of outages in specific cities, utility infrastructure characteristics, or seasonal patterns. The v2.0 training strategy changes fundamentally.
+
+### Real Data Collection Pipeline
+
+Every confirmed outcome in the GridSense system is already stored in Supabase. When the user base reaches 10,000 confirmed predictions per city:
+
+- Export confirmed outcome pairs (input signals + whether outage actually occurred) as training examples
+- Fine-tune a new adapter on this real-world data using the same Unsloth pipeline
+- Measure accuracy improvement on held-out confirmed examples before deploying the new adapter
+- This is the first power outage prediction model trained on real community-confirmed data — not synthetic
+
+### Active Learning Loop
+
+Not all confirmed outcomes are equally valuable as training data. Implement uncertainty sampling:
+
+- Predictions where the model had LOW or MEDIUM confidence that were confirmed correct → highest training value
+- Predictions where the model had HIGH confidence but was wrong → highest priority for correction
+- Weight training examples by confirmation confidence × how wrong the model was
+- Retraining pipeline runs on the first Monday of each month automatically
+
+### Neighbourhood-Specific Calibration
+
+Train separate lightweight calibration layers (not full LoRA adapters) for each city with sufficient data:
+
+- A calibration layer for Kampala learns that UMEME outages spike on Monday evenings and during heavy rain on Entebbe Road
+- A calibration layer for Lagos learns that EKEDC load-shedding follows a specific rotational schedule
+- Calibration layers are tiny (< 1MB) and can be bundled per city in the mobile app
+- This is what transforms GridSense from a generic AI tool into a neighbourhood-specific intelligence system
+
+---
+
+##  Version 3.0 — Utility API Integrations
+
+**Community signals are one half of the picture. Official utility data is the other half.** When both are combined, prediction accuracy increases dramatically.
+
+### Planned Maintenance Schedule Ingestion
+
+Most utility companies publish planned maintenance schedules either via their website, SMS alerts, or social media — but this information is never machine-readable and never integrated with community signals. GridSense v3.0 scrapes, parses, and ingests this data:
+
+- UMEME (Uganda): Scrapes umeme.co.ug/scheduled-outages daily at 6am and 6pm
+- Kenya Power (Kenya): Scrapes kplc.co.ke/info/cat/73/planned-outages
+- Eskom (South Africa): Ingests the official Eskom API (loadshedding-api.andrew-k.us is a community-built wrapper already available)
+- ECG (Ghana): Parses PDF bulletins posted to their website using a PDF extraction pipeline
+- K-Electric (Pakistan): Monitors their Twitter/X account for outage announcements
+
+When a planned outage for a specific area is detected in the ingested schedule, GridSense automatically raises the probability for all users in that area and adds a "SCHEDULED MAINTENANCE" flag to their prediction.
+
+### Real-Time Fault Report Integration
+
+Unplanned outages generate fault reports in utility SCADA systems — but these are never public. However, proxy signals exist:
+
+- Twitter/X monitoring for utility company handles and local hashtags (e.g. #UMEMEoutage, #EskomSePush)
+- News monitoring for local utility-related headlines via RSS feeds
+- Community reports from GridSense users themselves, aggregated in real time
+- When three or more independent users in a 1km radius report the same signal within 10 minutes, GridSense automatically triggers a community-wide alert regardless of individual probability scores
+
+### B2B Utility Dashboard
+
+Revenue model: Sell utility companies access to a real-time community intelligence dashboard showing:
+
+- Live heatmap of reported signals across their service area
+- Prediction accuracy of GridSense vs. actual outages in their grid
+- Community sentiment trends (are reports increasing or decreasing in a given area)
+- Early warning of areas approaching critical probability before the utility's own SCADA detects a fault
+- Pricing model: $2,000–$10,000/month per utility company depending on service area size
+
+---
+
+##  Version 3.1 — Hardware and IoT Integration
+
+**Software signals are powerful. Hardware signals are definitive.**
+
+### Smart Voltage Monitor (GridSense Sensor)
+
+A small hardware device (~$15 BOM cost) that plugs into any wall outlet:
+
+- Measures voltage every 500ms and detects brownouts (voltage below 180V), surges (above 260V), and flickering (rapid oscillation)
+- Transmits via BLE to a nearby GridSense mobile app instance
+- App automatically generates a report with hardware-confirmed signal type — the highest-confidence input possible
+- Eliminates human observation error: no need to notice the lights flickering if the sensor catches the voltage drop
+
+### Community-Deployed Transformer Monitors
+
+A weatherproof acoustic sensor mounted near a distribution transformer:
+
+- Monitors transformer hum frequency — transformers emit a characteristic audible signature before failure
+- Anomalous frequency or amplitude increase is reported automatically to GridSense
+- Target: deploy 10 monitors in Kampala's highest-density outage areas as a pilot
+- Hardware cost: approximately $40 per unit using an ESP32 + MEMS microphone + 4G module
+
+### Satellite Grid Imagery Integration
+
+- Integrate with Sentinel-2 (ESA, free) and commercial Planet Labs imagery for infrastructure mapping
+- Detect downed power lines after storms using computer vision on satellite imagery
+- Validate community reports: if a user reports a downed line in Sector 7, does satellite imagery from that morning confirm disrupted infrastructure?
+- Long-term: train a power infrastructure segmentation model to map grid topology in cities without public utility maps
+
+---
+
+##  Version 4.0 — Global Expansion and Network Effects
+
+### Multilingual Native UI
+
+GridSense v1.0 translates user input from any language into English for the model. V4.0 makes the entire UI native in local languages:
+
+- Luganda (Uganda, 8M speakers)
+- Swahili (East Africa, 200M speakers)
+- Hausa (West Africa, 75M speakers)
+- Yoruba (Nigeria, 45M speakers)
+- Amharic (Ethiopia, 25M speakers)
+- Tagalog (Philippines, 45M speakers)
+- Urdu (Pakistan, 70M speakers)
+- Bengali (Bangladesh/India, 230M speakers)
+
+Not translated by machine — reviewed by native speakers from each region who also experience outages.
+
+### Federated Learning Across Cities
+
+When GridSense has neighbourhood models for Kampala, Lagos, Nairobi, and Karachi independently, federated learning combines their knowledge without sharing raw user data:
+
+- Each city model contributes gradient updates to a global model
+- The global model learns shared patterns (heavy rain → grid stress, transformer age → outage frequency)
+- City-specific models retain local knowledge
+- This is privacy-preserving: raw report data never leaves its origin city
+
+### Outage Insurance Partnership
+
+Partner with parametric insurance providers to offer micro-insurance for outage events:
+
+- User opts in to GridSense Insurance for $0.50/month
+- If GridSense predicts above 80% probability AND an outage of more than 4 hours is confirmed, the user receives $2–$5 automatically via mobile money (MTN MoMo, M-Pesa, JazzCash)
+- Insurance is triggered algorithmically — no claims process, no paperwork
+- Actuarial data comes directly from GridSense's own confirmed prediction database
+
+### API Platform for Third-Party Developers
+
+Open the GridSense prediction API to developers building on top of it:
+
+- A restaurant app can query "what is the outage probability at [coordinates] for the next 6 hours" before a big event
+- A logistics company can route deliveries away from areas with high outage probability
+- A hospital system can trigger backup generator pre-charge when GridSense probability exceeds 70% in their district
+- Pricing: 1,000 API calls/month free, then $0.001 per call
+
+---
+
+##  Accuracy Targets by Version
+
+| Version | Training Data | Target Accuracy | Key Improvement |
+|---------|-------------|----------------|-----------------|
+| v1.0 (now) | 800 synthetic examples | Baseline — schema reliable | Fine-tuned schema compliance |
+| v1.1 | 800 synthetic + 2,000 confirmed real | +15% vs baseline | Real confirmed outcomes |
+| v2.0 | 10,000+ confirmed real per city | +30% vs baseline | City-specific calibration |
+| v3.0 | Real data + utility schedules | +50% vs baseline | Official data integration |
+| v4.0 | Federated + hardware sensors | +65% vs baseline | Hardware confirmation |
+
+---
+
+##  Technical Debt to Address
+
+These are known limitations of v1.0 that will be fixed before v2.0 launches:
+
+- **GGUF conversion**: The LoRA adapter needs a stable export to GGUF. Blocked in v1.0 by VRAM constraints on Colab T4. Will be resolved with Colab A100 or a dedicated GPU machine.
+- **Ollama adapter support**: Ollama does not yet support Gemma 4 LoRA adapters. Tracking the Ollama GitHub — this will ship within months given Gemma 4's release trajectory.
+- **Weather forecast integration**: The backend fetches current weather but the 6-hour forecast blocks defined in the specification are not yet wired into the Gemma 4 prompt. This is a two-day engineering task.
+- **Video processing pipeline**: Frame extraction and flicker analysis is implemented but audio transcription via Whisper is not yet connected. Whisper integration is straightforward — this will ship in v1.1.
+- **Outcome learning loop**: Confirmed outcomes are stored in Supabase but not yet used for retraining. The automated monthly retraining pipeline described above will close this loop.
+- **Map coordinate accuracy**: Neighbourhood markers currently use offset positioning from user GPS. V1.1 will replace this with pre-defined coordinate sets for supported cities using OpenStreetMap neighbourhood boundary data.
+- **Settings persistence**: User preferences (alert threshold, brain mode, language) are stored in localStorage, which is cleared on browser data reset. V2.0 moves user settings to Supabase with account-based persistence.
+
+---
+
+##  Features Planned for v1.1 (Next 30 Days)
+
+These are concrete, scoped features — not aspirations:
+
+- [ ] Whisper audio transcription connected to video pipeline
+- [ ] 6-hour weather forecast blocks injected into Gemma 4 prompt
+- [ ] Simulated Neighbours Debug Panel (triple-tap WordMark → live edit neighbour reports → re-synthesise brain response)
+- [ ] Share Warning button generating canvas-based warning card image for WhatsApp sharing
+- [ ] City Switcher (8 pre-configured demo cities with pre-defined neighbourhood coordinates)
+- [ ] Onboarding flow: 3 questions to capture device list and priorities before first analysis
+- [ ] Community Insights Panel: aggregate accuracy across all users in same city via Supabase Realtime
+- [ ] Forecast Accuracy Dashboard: track predicted vs confirmed outcomes per neighbourhood
+- [ ] Persistent VPS inference endpoint replacing free-tier API dependency
+- [ ] GGUF model file hosted on HuggingFace for direct Ollama pull
+
+---
+
+*GridSense is version 1.0 of what is intended to be the world's first community-powered power outage intelligence network. Every architectural decision — the fine-tuned adapter, the vector memory, the outcome confirmation loop, the multi-provider inference chain — was made with the next version in mind.*
+
+*The features above are not wishful thinking. They are the natural extensions of a working foundation.*
+
 
 ## Why This Matters
 
