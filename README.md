@@ -161,7 +161,7 @@ on a free Google Colab T4 GPU.
 
 ---
 
-## Why Synthetic Training Data — The Most Important Section in This README
+## Why Synthetic Training Data?
 
 This question deserves a direct, complete answer.
 
