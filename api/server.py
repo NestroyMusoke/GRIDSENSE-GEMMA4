@@ -195,3 +195,14 @@ async def neighborhood_stats(lat: float, lon: float):
             "TRAINED"
         )
     }
+
+import os
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "api.server:app",
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 7860))
+    )
