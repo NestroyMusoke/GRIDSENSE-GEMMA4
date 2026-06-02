@@ -1,3 +1,12 @@
+---
+title: GridSense
+emoji: ⚡
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+---
+
 # GridSense — Neighborhood Outage Intelligence
 
 **The world's first community-powered, multimodal AI early warning system for power outages.**
