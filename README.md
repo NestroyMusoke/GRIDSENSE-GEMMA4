@@ -52,12 +52,12 @@ Nobody had built the tool to read those signals at scale.
 
 ## Live Application
 
-### [web-production-8ab5f.up.railway.app](https://web-production-8ab5f.up.railway.app)
+### [Gridsense-Gemma4](https://huggingface.co/spaces/Nestroy2003/gridsense-gemma4)
 
 Open it on your phone from Kampala, Lagos, Karachi, or anywhere in the world.
 Allow location access. Describe what you are noticing. The fine-tuned Gemma 4 model
 analyzes it in real time and returns a full prediction with complete reasoning
-transparency.
+transparency.Due to monetary issues with Railway, Gridsense has been moved to HuggingFace and can be accessed using the link above.
 
 ---
 
